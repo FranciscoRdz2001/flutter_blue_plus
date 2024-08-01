@@ -926,7 +926,7 @@ public class FlutterBluePlusPlugin implements
                     }
 
                     // check maximum payload
-                    int maxLen = getMaxPayload(remoteId, writeType, allowLongWrite);
+                    int maxLen = 2048; // getMaxPayload(remoteId, writeType, allowLongWrite);
                     int dataLen = hexToBytes(value).length;
                     if (dataLen > maxLen) {
                         String a = writeTypeInt == 0 ? "withResponse" : "withoutResponse";
@@ -1696,7 +1696,7 @@ public class FlutterBluePlusPlugin implements
     {
         // 512 this comes from the BLE spec. Characteritics should not 
         // be longer than 512. Android also enforces this as the maximum in internal code.
-        int maxAttrLen = 3072; 
+        int maxAttrLen = 2048; 
 
         // if no response, we can only write up to MTU-3. 
         // This is the same limitation as iOS, and ensures transfer reliability.
