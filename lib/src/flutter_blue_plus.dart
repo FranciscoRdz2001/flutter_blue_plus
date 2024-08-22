@@ -354,12 +354,12 @@ class FlutterBluePlus {
     }
   }
 
-  /// Stops a scan for Bluetooth Low Energy devices 
+  /// Stops a scan for Bluetooth Low Energy devices
   static Future<void> stopScan() async {
     _Mutex mtx = _MutexFactory.getMutexForKey("scan");
     await mtx.take();
     try {
-      if(isScanningNow) {
+      if (isScanningNow) {
         await _stopScan();
       } else if (_logLevel.index >= LogLevel.info.index) {
         print("[FBP] stopScan: already stopped");

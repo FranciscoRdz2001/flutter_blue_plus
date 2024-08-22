@@ -153,7 +153,7 @@ class BmScanAdvertisement {
       remoteId: DeviceIdentifier(json['remote_id']),
       platformName: json['platform_name'],
       advName: json['adv_name'],
-      connectable: json['connectable'] != null ? json['connectable'] != 0 : false,
+      connectable: true,
       txPowerLevel: json['tx_power_level'],
       appearance: json['appearance'],
       manufacturerData: manufacturerData,
@@ -161,6 +161,21 @@ class BmScanAdvertisement {
       serviceUuids: serviceUuids,
       rssi: json['rssi'] != null ? json['rssi'] : 0,
     );
+  }
+
+  Map<dynamic, dynamic> toMap() {
+    final Map<dynamic, dynamic> data = {};
+    data['remote_id'] = remoteId.str;
+    data['platform_name'] = platformName;
+    data['adv_name'] = advName;
+    data['connectable'] = connectable ? 1 : 0;
+    data['tx_power_level'] = txPowerLevel;
+    data['appearance'] = appearance;
+    data['manufacturer_data'] = manufacturerData;
+    data['service_data'] = serviceData;
+    data['service_uuids'] = serviceUuids.map((s) => s.str).toList();
+    data['rssi'] = rssi;
+    return data;
   }
 }
 

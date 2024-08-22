@@ -93,6 +93,8 @@ public class FlutterBluePlusPlugin implements
 
     private BluetoothManager mBluetoothManager;
     private BluetoothAdapter mBluetoothAdapter;
+    private  BluetoothAdapter bluetoothAdapter;
+
     private boolean mIsScanning = false;
 
     private FlutterPluginBinding pluginBinding;
@@ -290,6 +292,9 @@ public class FlutterBluePlusPlugin implements
             log(LogLevel.DEBUG, "onMethodCall: " + call.method);
 
             // initialize adapter
+            if(bluetoothAdapter == null){
+                bluetoothAdapter = BluetoothAdapter.getDefaultAdapter();
+            }
             if (mBluetoothAdapter == null) {
                 log(LogLevel.DEBUG, "initializing BluetoothAdapter");
                 mBluetoothManager = (BluetoothManager) this.context.getSystemService(Context.BLUETOOTH_SERVICE);
@@ -480,14 +485,6 @@ public class FlutterBluePlusPlugin implements
                 {
                     // see: BmScanSettings
                     HashMap<String, Object> data = call.arguments();
-                    List<String> withServices =    (List<String>) data.get("with_services");
-                    List<String> withRemoteIds =   (List<String>) data.get("with_remote_ids");
-                    List<String> withNames =       (List<String>) data.get("with_names");
-                    List<String> withKeywords =    (List<String>) data.get("with_keywords");
-                    List<Object> withMsd =         (List<Object>) data.get("with_msd");
-                    List<Object> withServiceData = (List<Object>) data.get("with_service_data");
-                    boolean continuousUpdates =         (boolean) data.get("continuous_updates");
-                    boolean androidLegacy =             (boolean) data.get("android_legacy");
                     int androidScanMode =                   (int) data.get("android_scan_mode");
                     boolean androidUsesFineLocation =   (boolean) data.get("android_uses_fine_location");
 
@@ -528,90 +525,23 @@ public class FlutterBluePlusPlugin implements
                             return;
                         }
 
-                        // build scan settings
-                        ScanSettings.Builder builder = new ScanSettings.Builder();
-                        builder.setScanMode(androidScanMode);
-                        if (Build.VERSION.SDK_INT >= 26) { // Android 8.0 (August 2017)
-                            builder.setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED);
-                            builder.setLegacy(androidLegacy);
-                        }
-                        ScanSettings settings = builder.build();
-                        
-                        // set filters
-                        List<ScanFilter> filters = new ArrayList<>();
-
-                        // services
-                        for (int i = 0; i < withServices.size(); i++) {
-                            ParcelUuid s = ParcelUuid.fromString(uuid128(withServices.get(i)));
-                            ScanFilter f = new ScanFilter.Builder().setServiceUuid(s).build();
-                            filters.add(f);
-                        }
-                        
-                        // remoteIds
-                        for (int i = 0; i < withRemoteIds.size(); i++) {
-                            String address = withRemoteIds.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setDeviceAddress(address).build();
-                            filters.add(f);
-                        }
-
-                        // names
-                        for (int i = 0; i < withNames.size(); i++) {
-                            String name = withNames.get(i);
-                            ScanFilter f = new ScanFilter.Builder().setDeviceName(name).build();
-                            filters.add(f);
-                        }
-
-                        // keywords
-                        if (Build.VERSION.SDK_INT >= 33) { // Android 13 (August 2022)
-                            if (withKeywords.size() > 0) {
-                                // device must advertise a name
-                                int a1 = ScanRecord.DATA_TYPE_LOCAL_NAME_SHORT;
-                                int a2 = ScanRecord.DATA_TYPE_LOCAL_NAME_COMPLETE;
-                                ScanFilter f1 = new ScanFilter.Builder().setAdvertisingDataType(a1).build();
-                                ScanFilter f2 = new ScanFilter.Builder().setAdvertisingDataType(a2).build();
-                                filters.add(f1);
-                                filters.add(f2);
-                            }
-                        }
-
-                        // msd
-                        for (int i = 0; i < withMsd.size(); i++) {
-                            HashMap<String, Object> m = (HashMap<String, Object>) withMsd.get(i);
-                            int id =                    (int) m.get("manufacturer_id");
-                            byte[] mdata = hexToBytes((String) m.get("data"));
-                            byte[] mask =  hexToBytes((String) m.get("mask"));
-                            ScanFilter f = null;
-                            if (mask.length == 0) {
-                                f = new ScanFilter.Builder().setManufacturerData(id, mdata).build();
-                            } else {
-                                f = new ScanFilter.Builder().setManufacturerData(id, mdata, mask).build();
-                            }
-                            filters.add(f);
-                        }
-
-                        // service data
-                        for (int i = 0; i < withServiceData.size(); i++) {
-                            HashMap<String, Object> m = (HashMap<String, Object>) withServiceData.get(i);
-                            ParcelUuid s = ParcelUuid.fromString((String) m.get("service"));
-                            byte[] mdata =             hexToBytes((String) m.get("data"));
-                            byte[] mask =              hexToBytes((String) m.get("mask"));
-                            ScanFilter f = null;
-                            if (mask.length == 0) {
-                                f = new ScanFilter.Builder().setServiceData(s, mdata).build();
-                            } else {
-                                f = new ScanFilter.Builder().setServiceData(s, mdata, mask).build();
-                            }
-                            filters.add(f);
-                        }
-
-                        // remember for later
-                        mScanFilters = data;
 
                         // clear seen devices
                         mAdvSeen.clear();
                         mScanCounts.clear();
 
-                        scanner.startScan(filters, settings, getScanCallback());
+                        Set<BluetoothDevice> bondedDevices = bluetoothAdapter.getBondedDevices();
+                        List<BluetoothDevice> deviceList = new ArrayList<>(bondedDevices);
+                        for (int x = 0; x < deviceList.size(); x++) {
+                            BluetoothDevice d = deviceList.get(x);
+                            HashMap<String, Object> response = new HashMap<>();
+                            response.put("advertisements", Arrays.asList(bmScanAdvertisement(d)));
+                            invokeMethodUIThread("OnScanResponse", response);
+
+                            Log.d("Bonded devices: ", d.getName());
+                        }
+
+                        scanner.startScan(getScanCallback());
 
                         mIsScanning = true;
 
@@ -625,6 +555,7 @@ public class FlutterBluePlusPlugin implements
                     BluetoothLeScanner scanner = mBluetoothAdapter.getBluetoothLeScanner();
 
                     if(scanner != null) {
+
                         scanner.stopScan(getScanCallback());
                         mIsScanning = false;
                     }
@@ -1302,8 +1233,10 @@ public class FlutterBluePlusPlugin implements
 
                     // see: PhySupport
                     HashMap<String, Object> map = new HashMap<>();
-                    map.put("le_2M", mBluetoothAdapter.isLe2MPhySupported());
-                    map.put("le_coded", mBluetoothAdapter.isLeCodedPhySupported());
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        map.put("le_2M", mBluetoothAdapter.isLe2MPhySupported());
+                        map.put("le_coded", mBluetoothAdapter.isLeCodedPhySupported());
+                    }
 
                     result.success(map);
                     break;
@@ -1336,7 +1269,9 @@ public class FlutterBluePlusPlugin implements
                     waitIfBonding();
 
                     // set preferred phy
-                    gatt.setPreferredPhy(txPhy, rxPhy, phyOptions);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        gatt.setPreferredPhy(txPhy, rxPhy, phyOptions);
+                    }
 
                     result.success(true);
                     break;
@@ -2029,41 +1964,15 @@ public class FlutterBluePlusPlugin implements
                     super.onScanResult(callbackType, result);
 
                     BluetoothDevice device = result.getDevice();
-                    String remoteId = device.getAddress();
-                    ScanRecord scanRecord = result.getScanRecord();
-                    String advHex = scanRecord != null ? bytesToHex(scanRecord.getBytes()) : "";
-
-                    // filter duplicates
-                    if (((boolean) mScanFilters.get("continuous_updates")) == false) {
-                        boolean isDuplicate = mAdvSeen.containsKey(remoteId) && mAdvSeen.get(remoteId).equals(advHex);
-                        mAdvSeen.put(remoteId, advHex); // remember
-                        if (isDuplicate) {
-                            return;
-                        }
-                    }
-
-                    // filter keywords
-                    String name = scanRecord != null ? scanRecord.getDeviceName() : "";
-                    List<String> keywords = (List<String>) mScanFilters.get("with_keywords");
-                    if (filterKeywords(keywords, name) == false) {
-                        return;
-                    }
-
-                    // filter divisor
-                    if (((boolean) mScanFilters.get("continuous_updates")) != false) {
-                        int count = scanCountIncrement(remoteId);   
-                        int divisor = (int) mScanFilters.get("continuous_divisor");
-                        if ((count % divisor) != 0) {
-                            return;
-                        }
-                    }
 
                     // see BmScanResponse
                     HashMap<String, Object> response = new HashMap<>();
-                    response.put("advertisements", Arrays.asList(bmScanAdvertisement(device, result)));
+                    response.put("advertisements", Arrays.asList(bmScanAdvertisement(device)));
 
                     invokeMethodUIThread("OnScanResponse", response);
+
                 }
+
 
                 @Override
                 public void onBatchScanResults(List<ScanResult> results)
@@ -2512,15 +2421,15 @@ public class FlutterBluePlusPlugin implements
     // ██   ██  ██       ██       ██       ██       ██   ██       ██ 
     // ██   ██  ███████  ███████  ██       ███████  ██   ██  ███████ 
 
-    HashMap<String, Object> bmScanAdvertisement(BluetoothDevice device, ScanResult result) {
+    HashMap<String, Object> bmScanAdvertisement(BluetoothDevice device) {
 
         int min = Integer.MIN_VALUE;
 
-        ScanRecord adv = result.getScanRecord();
+        // ScanRecord adv = result.getScanRecord();
 
         boolean connectable;
         if (Build.VERSION.SDK_INT >= 26) { // Android 8.0, August 2017
-            connectable = result.isConnectable();
+           // connectable = result.isConnectable();
         } else {
             // Prior to Android 8.0, it is not possible to get if connectable.
             // Previously, we used to check `adv.getAdvertiseFlags() & 0x2` but that
@@ -2528,52 +2437,22 @@ public class FlutterBluePlusPlugin implements
             connectable = true;
         }
 
-        String                  advName      = adv != null ?  adv.getDeviceName()                : null;
-        int                     txPower      = adv != null ?  adv.getTxPowerLevel()              : min;
-        int                     appearance   = adv != null ?  getAppearanceFromScanRecord(adv)   : 0;
-        Map<Integer, byte[]>    manufData    = adv != null ?  getManufacturerSpecificData(adv)   : null;
-        List<ParcelUuid>        serviceUuids = adv != null ?  adv.getServiceUuids()              : null;
-        Map<ParcelUuid, byte[]> serviceData  = adv != null ?  adv.getServiceData()               : null;
+        String                  advName      = device.getName();
+        int                     txPower      = min;
+        int                     appearance   =  0;
 
-        // Manufacturer Specific Data
-        HashMap<Integer, String> manufDataB = new HashMap<>();
-        if (manufData != null) {
-            for (Map.Entry<Integer, byte[]> entry : manufData.entrySet()) {
-                manufDataB.put(entry.getKey(), bytesToHex(entry.getValue()));
-            }
-        }
 
-        // Service Data
-        HashMap<String, Object> serviceDataB = new HashMap<>();
-        if (serviceData != null) {
-            for (Map.Entry<ParcelUuid, byte[]> entry : serviceData.entrySet()) {
-                ParcelUuid key = entry.getKey();
-                byte[] value = entry.getValue();
-                serviceDataB.put(uuidStr(key.getUuid()), bytesToHex(value));
-            }
-        }
-
-        // Service UUIDs
-        List<String> serviceUuidsB = new ArrayList<>();
-        if (serviceUuids != null) {
-            for (ParcelUuid s : serviceUuids) {
-                serviceUuidsB.add(uuidStr(s.getUuid()));
-            }
-        }
 
         // See: BmScanAdvertisement
         // perf: only add keys if they exists
         HashMap<String, Object> map = new HashMap<>();
         if (device.getAddress() != null) {map.put("remote_id", device.getAddress());};
         if (device.getName() != null)    {map.put("platform_name", device.getName());}
-        if (connectable)                 {map.put("connectable", 1);}
+        // if (connectable)                 {map.put("connectable", 1);}
         if (advName != null)             {map.put("adv_name", advName);}
         if (txPower != min)              {map.put("tx_power_level", txPower);}
         if (appearance != 0)             {map.put("appearance", appearance);}
-        if (manufData != null)           {map.put("manufacturer_data", manufDataB);}
-        if (serviceData != null)         {map.put("service_data", serviceDataB);}
-        if (serviceUuids != null)        {map.put("service_uuids", serviceUuidsB);}
-        if (result.getRssi() != 0)       {map.put("rssi", result.getRssi());};
+        // if (result.getRssi() != 0)       {map.put("rssi", result.getRssi());};
         return map;
     }
 
